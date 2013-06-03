@@ -98,9 +98,32 @@ class Recipe(object):
         if 'ctl' in sections:
             config_data += CTL_TEMPLATE % locals()
 
+            ctlplugins = [c for c in self.options.get('ctlplugins', '').splitlines() if c]
+            pattern = re.compile("(?P<name>[^\s]+)"
+                                 "\s+"
+                                 "(?P<callable>[^\s]+)")
+            for ctlplugin in ctlplugins:
+                match = pattern.match(ctlplugin)
+                if not match:
+                    raise ValueError("CTL plugins line incorrect: %s" % ctlplugin)
+
+                config_data += CTLPLUGIN_TEMPLATE % match.groupdict()
+
         # rpc
         if 'rpc' in sections:
             config_data += RPC_TEMPLATE % locals()
+
+            rpcplugins = [r for r in self.options.get('rpcplugins', '').splitlines() if r]
+            pattern = re.compile("(?P<name>[^\s]+)"
+                                 "\s+"
+                                 "(?P<callable>[^\s]+)")
+            for rpcplugin in rpcplugins:
+                match = pattern.match(rpcplugin)
+                if not match:
+                    raise ValueError("RPC plugins line incorrect: %s" % rpcplugin)
+
+                config_data += RPC_EXTRA_TEMPLATE % match.groupdict()
+
 
         # programs
         programs = [p for p in self.options.get('programs', '').splitlines() if p]
@@ -229,12 +252,15 @@ class Recipe(object):
     def _install_scripts(self):
         conf_file = self.options.get('supervisord-conf')
 
+        #install extra eggs if any
+        plugin_eggs = self.options.get('plugins', '')
+
         init_stmt = 'import sys; sys.argv.extend(["-c","%s"])' % \
             (conf_file,)
         dscript = zc.recipe.egg.Egg(
             self.buildout,
             self.name,
-            {'eggs': 'supervisor',
+            {'eggs': '\n'.join(['supervisor', plugin_eggs]),
              'scripts': 'supervisord=%sd' % self.name,
              'initialization': init_stmt,
              })
@@ -242,7 +268,7 @@ class Recipe(object):
         memscript = zc.recipe.egg.Egg(
             self.buildout,
             self.name,
-            {'eggs': 'supervisor',
+            {'eggs': '\n'.join(['supervisor', plugin_eggs]),
              'scripts': 'memmon=memmon',
              })
 
@@ -251,22 +277,19 @@ class Recipe(object):
         ctlscript = zc.recipe.egg.Egg(
             self.buildout,
             self.name,
-            {'eggs': 'supervisor',
+            {'eggs': '\n'.join(['supervisor', plugin_eggs]),
              'scripts': 'supervisorctl=%sctl' % self.name,
              'initialization': init_stmt,
              'arguments': 'sys.argv[1:]',
              })
 
-        #install extra eggs if any
-        eggs = self.options.get('plugins', '')
-
         extra_eggs = []
-        if eggs:
+        if plugin_eggs:
             extra_eggs = list(
                 zc.recipe.egg.Egg(
                     self.buildout,
                     self.name,
-                    {'eggs': eggs,
+                    {'eggs': plugin_eggs,
                      }).install())
 
         return list(dscript.install()) + \
@@ -325,6 +348,16 @@ chmod = %(chmod)s
 RPC_TEMPLATE = """
 [rpcinterface:supervisor]
 supervisor.rpcinterface_factory=supervisor.rpcinterface:make_main_rpcinterface
+"""
+
+RPC_EXTRA_TEMPLATE = """
+[rpcinterface:%(name)s]
+supervisor.rpcinterface_factory=%(callable)s
+"""
+
+CTLPLUGIN_TEMPLATE = """
+[ctlplugin:%(name)s]
+supervisor.ctl_factory = %(callable)s
 """
 
 PROGRAM_TEMPLATE = """
