@@ -3,14 +3,17 @@
 # Packages
 *.egg
 *.egg-info
-dist
-build
-eggs
-parts
-bin
-var
-sdist
-develop-eggs
+/dist/
+/build/
+/eggs/
+/parts/
+/bin/
+/var/
+/sdist/
+/develop-eggs/
+/lib/
+/local/
+/include/
 .installed.cfg
 
 # Installer logs

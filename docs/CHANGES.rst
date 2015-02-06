@@ -1,5 +1,16 @@
+Change history
+**************
+
 0.20 (unreleased)
 =================
+
+- Feature: exclude global configuration so the generated file can be used
+  to be included by a system wide supervisord.
+  [jensens]
+
+- Cleanup/overhaul/pep8 of code base, include self contained buildout with
+  testrunner
+  [jensens]
 
 0.19 (2013-01-09)
 =================
@@ -18,13 +29,13 @@
 - Add travis-ci support
   [fredvd]
 
-- Add process options to eventlisteners so you can for example delay them. 
+- Add process options to eventlisteners so you can for example delay them.
   [fredvd]
 
 - Fix doctests, pin supervisor and superlance in the doctests
   [fredvd]
-  
-- Add support for setting user, directory and environment options of 
+
+- Add support for setting user, directory and environment options of
   supervisord
   [anthonygerrard]
 
@@ -81,20 +92,23 @@
 
 0.10.1 (2010-07-27)
 ===================
+
 - Updated documentation about how to use the memmon event listener [lucielejard]
 
 0.10 (2010-06-03)
 =================
+
  - Added an option for the environment variable PATH
    [lucielejard]
+
  - Added support for disabling supervisor sections (such as http, rpc and ctl) [Domen Kozar]
 
 
 0.9 (2009-11-04)
 ================
 
- - Applied Jonathan Ballet's patch: The generated control script doesn't 
-   automatically connect on the created supervisord when running on a custom port. 
+ - Applied Jonathan Ballet's patch: The generated control script doesn't
+   automatically connect on the created supervisord when running on a custom port.
 
 0.8 (2009-04-27)
 ================
@@ -115,17 +129,17 @@
 0.6 (2008-11-10)
 ================
 
- - One can now specify the user account that will be used as the account 
+ - One can now specify the user account that will be used as the account
    which runs the program.
    [amos]
 
 0.5 (2008-08-23)
 ================
 
- - Adding eventlistners option for use as event notification framework.  
+ - Adding eventlistners option for use as event notification framework.
    Targetting use with supervisor's memmon event listener
    [aburkhalter]
- 
+
 0.4 (2008-06-12)
 ================
 
@@ -141,7 +155,7 @@
 
  - Updated docs and tests
    [mustapha]
- 
+
  - pep8 cosmetics
    [mustapha]
 
@@ -156,7 +170,7 @@
 ================
 
  - Make possible to pass arguments to the command so one can use ctl scripts
-   with supervisor with arguments like 'fg' for zope instances or --no-detach 
+   with supervisor with arguments like 'fg' for zope instances or --no-detach
    or something similar for other programs
    [mustapha]
 

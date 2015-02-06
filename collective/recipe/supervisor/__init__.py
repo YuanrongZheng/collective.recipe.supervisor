@@ -1,9 +1,16 @@
 # -*- coding: utf-8 -*-
 """Recipe supervisor"""
+from collective.recipe.supervisor import templates
 
 import os
 import re
 import zc.recipe.egg
+
+
+def option_setting(options, key, supervisor_key):
+    return options.get(key, False) \
+        and ('%s = %s' % (supervisor_key, options.get(key))) \
+        or ''
 
 
 class Recipe(object):
@@ -19,84 +26,119 @@ class Recipe(object):
                 'supervisord.conf',
                 )
 
+    @property
+    def _sections(self):
+        default = 'global ctl http rpc services'
+
+        return self.options.get('sections', default).split()
+
     def install(self):
         """Installer"""
-        # XXX Implement recipe functionality here
         # Return files that were created by the recipe. The buildout
         # will remove all returned files upon reinstall.
 
         # general options
-        sections = self.options.get('sections', 'ctl http rpc').split()
-
-        # supervisord
         buildout_dir = self.buildout['buildout']['directory']
-        logfile = self.options.get('logfile', os.path.join(buildout_dir,
-                                                           'var',
-                                                           'log',
-                                                           'supervisord.log'))
-        pidfile = self.options.get('pidfile', os.path.join(buildout_dir,
-                                                           'var',
-                                                           'supervisord.pid'))
-        childlogdir = self.options.get('childlogdir', os.path.join(buildout_dir,
-                                                           'var',
-                                                           'log'))
-        log_dir = os.path.abspath(os.path.dirname(logfile))
-        pid_dir = os.path.abspath(os.path.dirname(pidfile))
+
+        config_data = ""
+
+        param = dict()
+
+        param['user'] = self.options.get('user', '')
+        param['password'] = self.options.get('password', '')
+        param['port'] = self.options.get('port', '127.0.0.1:9001')
+        param['file'] = self.options.get('file', '')
+        param['chmod'] = self.options.get('chmod', '0700')
+
         http_socket = self.options.get('http-socket', 'inet')
-        logfile_maxbytes = self.options.get('logfile-maxbytes', '50MB')
-        logfile_backups = self.options.get('logfile-backups', '10')
-        loglevel = self.options.get('loglevel', 'info')
-        umask = self.options.get('umask', '022')
-        nodaemon = self.options.get('nodaemon', 'false')
-        nocleanup = self.options.get('nocleanup', 'false')
-
-        def option_setting(options, key, supervisor_key):
-            return options.get(key, False) \
-                and ('%s = %s' % (supervisor_key, options.get(key))) \
-                or ''
-
-        supervisord_user = option_setting(self.options, 'supervisord-user', 'user')
-        supervisord_directory = option_setting(self.options, 'supervisord-directory', 'directory')
-        supervisord_environment = option_setting(self.options, 'supervisord-environment', 'environment')
-
-        config_data = CONFIG_TEMPLATE % locals()
-
-        # environment PATH variable
-        env_path = self.options.get('env-path', None)
-        if env_path is not None:
-            config_data += PATH_TEMPLATE % locals()
-
-        # make dirs
-        for folder in [childlogdir, log_dir, pid_dir]:
-            if not os.path.isdir(folder):
-                os.makedirs(folder)
-
-        # (unix|inet)_http_server
-        port = self.options.get('port', '127.0.0.1:9001')
-        user = self.options.get('user', '')
-        password = self.options.get('password', '')
-        if 'http' in sections:
-            if http_socket == 'inet':
-                config_data += INET_HTTP_TEMPLATE % locals()
-            elif http_socket == 'unix':
-                file_ = self.options.get('file', '')
-                chmod = self.options.get('chmod', '0700')
-                config_data += UNIX_HTTP_TEMPLATE % locals()
-            else:
-                raise ValueError("http-socket only supports values inet or unix.")
-
-        # supervisorctl
+        host_default = param['port']
         if http_socket == 'inet':
-            if ':' in port:
-                default_serverhost = port
-            else:
-                default_serverhost = 'localhost:%s' % port
-            default_serverhost = 'http://%s' % default_serverhost
+            if ':' not in host_default:
+                host_default = 'localhost:{0}'.format(host_default)
+            host_default = 'http://{0}'.format(host_default)
         elif http_socket == 'unix':
-            default_serverhost = 'unix://%s' % file_
-        serverurl = self.options.get('serverurl', default_serverhost)
-        if 'ctl' in sections:
-            config_data += CTL_TEMPLATE % locals()
+            host_default = 'unix://%s' % param['file']
+
+        param['serverurl'] = self.options.get('serverurl', host_default)
+
+        if 'global' in self._sections:
+            # supervisord service
+            param['logfile'] = self.options.get(
+                'logfile',
+                os.path.join(buildout_dir, 'var', 'log', 'supervisord.log')
+            )
+            param['pidfile'] = self.options.get(
+                'pidfile',
+                os.path.join(buildout_dir, 'var', 'supervisord.pid')
+            )
+            param['childlogdir'] = self.options.get(
+                'childlogdir',
+                os.path.join(buildout_dir, 'var', 'log')
+            )
+            if not os.path.isdir(param['childlogdir']):
+                os.makedirs(param['childlogdir'])
+
+            param['log_dir'] = os.path.abspath(
+                os.path.dirname(param['logfile'])
+            )
+            if not os.path.isdir(param['log_dir']):
+                os.makedirs(param['log_dir'])
+
+            param['pid_dir'] = os.path.abspath(
+                os.path.dirname(param['logfile'])
+            )
+            if not os.path.isdir(param['pid_dir']):
+                os.makedirs(param['pid_dir'])
+
+            param['logfile_maxbytes'] = self.options.get(
+                'logfile-maxbytes',
+                '50MB'
+            )
+            param['logfile_backups'] = self.options.get(
+                'logfile-backups',
+                '10'
+            )
+            param['loglevel'] = self.options.get('loglevel', 'info')
+            param['umask'] = self.options.get('umask', '022')
+            param['nodaemon'] = self.options.get('nodaemon', 'false')
+            param['nocleanup'] = self.options.get('nocleanup', 'false')
+
+            param['supervisord_user'] = option_setting(
+                self.options,
+                'supervisord-user',
+                'user'
+            )
+            param['supervisord_directory'] = option_setting(
+                self.options,
+                'supervisord-directory',
+                'directory'
+            )
+            param['supervisord_environment'] = option_setting(
+                self.options,
+                'supervisord-environment',
+                'environment'
+            )
+            config_data += templates.GLOBAL % param
+
+            # environment PATH variable
+            env_path = self.options.get('env-path', None)
+            if env_path is not None:
+                config_data += templates.PATH % locals()
+
+        if 'ctl' in self._sections:
+            # (unix|inet)_http_server
+            if 'http' in self._sections:
+                if http_socket == 'inet':
+                    config_data += templates.INET_HTTP % param
+                elif http_socket == 'unix':
+                    config_data += templates.UNIX_HTTP % param
+                else:
+                    raise ValueError(
+                        "http-socket only supports values inet or nix."
+                    )
+
+            # supervisorctl
+            config_data += templates.CTL % param
 
             ctlplugins = [c for c in self.options.get('ctlplugins', '').splitlines() if c]
             pattern = re.compile("(?P<name>[^\s]+)"
@@ -107,11 +149,11 @@ class Recipe(object):
                 if not match:
                     raise ValueError("CTL plugins line incorrect: %s" % ctlplugin)
 
-                config_data += CTLPLUGIN_TEMPLATE % match.groupdict()
+                config_data += templates.CTLPLUGIN_TEMPLATE % match.groupdict()
 
         # rpc
-        if 'rpc' in sections:
-            config_data += RPC_TEMPLATE % locals()
+        if 'rpc' in self._sections:
+            config_data += templates.RPC
 
             rpcplugins = [r for r in self.options.get('rpcplugins', '').splitlines() if r]
             pattern = re.compile("(?P<name>[^\s]+)"
@@ -122,11 +164,12 @@ class Recipe(object):
                 if not match:
                     raise ValueError("RPC plugins line incorrect: %s" % rpcplugin)
 
-                config_data += RPC_EXTRA_TEMPLATE % match.groupdict()
+                config_data += templates.RPC_EXTRA_TEMPLATE % match.groupdict()
 
 
         # programs
-        programs = [p for p in self.options.get('programs', '').splitlines() if p]
+        programs = [p for p in self.options.get('programs', '').splitlines()
+                    if p]
         pattern = re.compile("(?P<priority>\d+)"
                              "\s+"
                              "(?P<processname>[^\s]+)"
@@ -138,254 +181,174 @@ class Recipe(object):
                              "(\s+(?P<redirect>(true|false)))?"
                              "(\s+(?P<user>[^\s]+))?")
 
-        for program in programs:
-            match = pattern.match(program)
-            if not match:
-                raise ValueError("Program line incorrect: %s" % program)
+        if "services" in self._sections:
+            for program in programs:
+                match = pattern.match(program)
+                if not match:
+                    raise ValueError("Program line incorrect: %s" % program)
 
-            parts = match.groupdict()
-            program_user = parts.get('user')
-            process_options = parts.get('processopts')
-            extras = []
+                parts = match.groupdict()
+                program_user = parts.get('user')
+                process_options = parts.get('processopts')
+                extras = []
 
-            if program_user:
-                extras.append('user = %s' % program_user)
-            if process_options:
-                for part in process_options.split():
-                    if part.find('=') == -1:
-                        continue
-                    (key, value) = part.split('=', 1)
-                    if key and value:
-                        extras.append("%s = %s" % (key, value))
+                if program_user:
+                    extras.append('user = %s' % program_user)
+                if process_options:
+                    for part in process_options.split():
+                        if part.find('=') == -1:
+                            continue
+                        (key, value) = part.split('=', 1)
+                        if key and value:
+                            extras.append("%s = %s" % (key, value))
 
-            config_data += PROGRAM_TEMPLATE % \
-                           dict(program = parts.get('processname'),
-                                command = parts.get('command'),
-                                priority = parts.get('priority'),
-                                redirect_stderr = parts.get('redirect') or \
-                                                  'false',
-                                directory = parts.get('directory') or \
-                                         os.path.dirname(parts.get('command')),
-                                args = parts.get('args') or '',
-                                extra_config = "\n".join(extras),
-                           )
+                tpl_parameters = dict(
+                    program=parts.get('processname'),
+                    command=parts.get('command'),
+                    priority=parts.get('priority'),
+                    redirect_stderr=parts.get('redirect') or 'false',
+                    directory=(parts.get('directory') or
+                               os.path.dirname(parts.get('command'))),
+                    args=parts.get('args') or '',
+                    extra_config="\n".join(extras),
+                )
+                config_data += templates.PROGRAM % tpl_parameters
 
-        # eventlisteners
-        eventlisteners = [e for e in self.options.get('eventlisteners', '').splitlines()
-                            if e]
+            # eventlisteners
+            pattern = re.compile("(?P<processname>[^\s]+)"
+                                 "(\s+\((?P<processopts>([^\)]+))\))?"
+                                 "\s+"
+                                 "(?P<events>[^\s]+)"
+                                 "\s+"
+                                 "(?P<command>[^\s]+)"
+                                 "(\s+\[(?P<args>[^\]]+)\])?")
 
-        pattern = re.compile("(?P<processname>[^\s]+)"
-                             "(\s+\((?P<processopts>([^\)]+))\))?"
-                             "\s+"
-                             "(?P<events>[^\s]+)"
-                             "\s+"
-                             "(?P<command>[^\s]+)"
-                             "(\s+\[(?P<args>[^\]]+)\])?")
+            ev_lines = self.options.get('eventlisteners', '').splitlines()
+            eventlisteners = [e for e in ev_lines if e]
 
-        for eventlistener in eventlisteners:
-            match = pattern.match(eventlistener)
-            if not match:
-                raise ValueError("Event Listeners line incorrect: %s" % eventlistener)
+            for eventlistener in eventlisteners:
+                match = pattern.match(eventlistener)
+                if not match:
+                    raise ValueError(
+                        "Event Listeners line incorrect: {0}".format(
+                            eventlistener
+                        )
+                    )
 
-            parts = match.groupdict()
-            process_options = parts.get('processopts')
-            extras = []
+                parts = match.groupdict()
+                process_options = parts.get('processopts')
+                extras = []
 
-            if process_options:
-                for part in process_options.split():
-                    if part.find('=') == -1:
-                        continue
-                    (key, value) = part.split('=', 1)
-                    if key and value:
-                        extras.append("%s = %s" % (key, value))
+                if process_options:
+                    for part in process_options.split():
+                        if part.find('=') == -1:
+                            continue
+                        (key, value) = part.split('=', 1)
+                        if key and value:
+                            extras.append("%s = %s" % (key, value))
+                ev_params = dict(**param)
+                ev_params['name'] = parts.get('processname')
+                ev_params['events'] = parts.get('events')
+                ev_params['command'] = parts.get('command')
+                ev_params['args'] = parts.get('args')
+                ev_params['extra_config'] = "\n".join(extras)
 
-            config_data += EVENTLISTENER_TEMPLATE % \
-                           dict(name = parts.get('processname'),
-                                events = parts.get('events'),
-                                command = parts.get('command'),
-                                args = parts.get('args'),
-                                user = user,
-                                password = password,
-                                serverurl = serverurl,
-                                extra_config = "\n".join(extras),
-                           )
+                config_data += templates.EVENTLISTENER % ev_params
 
-        # groups
-        groups = [g for g in self.options.get('groups', '').splitlines() if g]
+            # groups
+            groups = [g for g in self.options.get('groups', '').splitlines()
+                      if g]
 
-        pattern = re.compile("(?P<priority>\d+)"
-                             "\s+"
-                             "(?P<group>[^\s]+)"
-                             "\s+"
-                             "(?P<programs>[^\s]+)")
+            pattern = re.compile("(?P<priority>\d+)"
+                                 "\s+"
+                                 "(?P<group>[^\s]+)"
+                                 "\s+"
+                                 "(?P<programs>[^\s]+)")
 
-        for group in groups:
-            match = pattern.match(group)
-            if not match:
-                raise ValueError("Group line incorrect: %s" % group)
+            for group in groups:
+                match = pattern.match(group)
+                if not match:
+                    raise ValueError("Group line incorrect: %s" % group)
 
-            parts = match.groupdict()
+                parts = match.groupdict()
 
-            config_data += GROUP_TEMPLATE % \
-                           dict(priority = parts.get('priority'),
-                                group = parts.get('group'),
-                                programs = parts.get('programs'),
-                           )
+                tpl_parameters = dict(
+                    priority=parts.get('priority'),
+                    group=parts.get('group'),
+                    programs=parts.get('programs'),
+                )
+                config_data += templates.GROUP % tpl_parameters
 
-        # include
-        files = [f for f in self.options.get('include', '').splitlines() if f]
-        if files:
-            stringfiles = " ".join(files)
-            config_data += INCLUDE_TEMPLATE % \
-                           dict(stringfiles=stringfiles,
-                                )
+            # include
+            files = [f for f in self.options.get('include', '').splitlines()
+                     if f]
+            if files:
+                stringfiles = " ".join(files)
+                config_data += templates.INCLUDE % {'stringfiles': stringfiles}
 
         conf_file = self.options.get('supervisord-conf')
 
         if not os.path.exists(os.path.dirname(conf_file)):
             os.makedirs(os.path.dirname(conf_file))
 
-        open(conf_file, 'w').write(config_data)
+        with open(conf_file, 'w') as cf:
+            cf.write(config_data)
 
         return self._install_scripts()
 
     def _install_scripts(self):
+        installed = []
         conf_file = self.options.get('supervisord-conf')
 
-        #install extra eggs if any
-        plugin_eggs = self.options.get('plugins', '')
+        init_stmt = 'import sys; sys.argv.extend(["-c","{0}"])'.format(
+            conf_file
+        )
 
-        init_stmt = 'import sys; sys.argv.extend(["-c","%s"])' % \
-            (conf_file,)
-        dscript = zc.recipe.egg.Egg(
-            self.buildout,
-            self.name,
-            {'eggs': '\n'.join(['supervisor', plugin_eggs]),
-             'scripts': 'supervisord=%sd' % self.name,
-             'initialization': init_stmt,
-             })
+        #install extra eggs if any
+        plugins = self.options.get('plugins', '')
+        if plugins:
+            pluginsscript = zc.recipe.egg.Egg(
+                self.buildout,
+                self.name,
+                {'eggs': plugins}
+            )
+            installed += list(pluginsscript.install())
+
+        if 'global' in self._sections:
+            dscript = zc.recipe.egg.Egg(
+                self.buildout,
+                self.name,
+                {'eggs': '\n'.join(['supervisor', plugins]),
+                 'scripts': 'supervisord=%sd' % self.name,
+                 'initialization': init_stmt,
+                 })
+            installed = list(dscript.install())
 
         memscript = zc.recipe.egg.Egg(
             self.buildout,
             self.name,
-            {'eggs': '\n'.join(['supervisor', plugin_eggs]),
+            {'eggs': '\n'.join(['supervisor', plugins]),
              'scripts': 'memmon=memmon',
              })
+        installed += list(memscript.install())
 
-        init_stmt = 'import sys; sys.argv[1:1] = ["-c","%s"]' % \
-            (conf_file,)
-        ctlscript = zc.recipe.egg.Egg(
-            self.buildout,
-            self.name,
-            {'eggs': '\n'.join(['supervisor', plugin_eggs]),
-             'scripts': 'supervisorctl=%sctl' % self.name,
-             'initialization': init_stmt,
-             'arguments': 'sys.argv[1:]',
-             })
+        init_stmt = 'import sys; sys.argv[1:1] = ["-c", "[0]"]'.format(
+            conf_file
+        )
+        if 'ctl' in self._sections:
+            ctlscript = zc.recipe.egg.Egg(
+                self.buildout,
+                self.name,
+                {'eggs': '\n'.join(['supervisor', plugins]),
+                 'scripts': 'supervisorctl=%sctl' % self.name,
+                 'initialization': init_stmt,
+                 'arguments': 'sys.argv[1:]',
+                 })
+            installed += list(ctlscript.install())
 
-        extra_eggs = []
-        if plugin_eggs:
-            extra_eggs = list(
-                zc.recipe.egg.Egg(
-                    self.buildout,
-                    self.name,
-                    {'eggs': plugin_eggs,
-                     }).install())
-
-        return list(dscript.install()) + \
-               list(memscript.install()) + \
-               list(ctlscript.install()) + \
-               extra_eggs + \
-               [conf_file]
+        installed += [conf_file]
+        return installed
 
     def update(self):
         """Updater"""
         return self._install_scripts()
-
-
-CONFIG_TEMPLATE = """
-[supervisord]
-childlogdir = %(childlogdir)s
-logfile = %(logfile)s
-logfile_maxbytes = %(logfile_maxbytes)s
-logfile_backups = %(logfile_backups)s
-loglevel = %(loglevel)s
-pidfile = %(pidfile)s
-umask = %(umask)s
-nodaemon = %(nodaemon)s
-nocleanup = %(nocleanup)s
-%(supervisord_user)s
-%(supervisord_directory)s
-%(supervisord_environment)s
-"""
-
-PATH_TEMPLATE = """\
-environment=PATH=%(env_path)s
-"""
-
-CTL_TEMPLATE = """
-[supervisorctl]
-serverurl = %(serverurl)s
-username = %(user)s
-password = %(password)s
-"""
-
-INET_HTTP_TEMPLATE = """
-[inet_http_server]
-port = %(port)s
-username = %(user)s
-password = %(password)s
-"""
-
-UNIX_HTTP_TEMPLATE = """
-[unix_http_server]
-file = %(file_)s
-username = %(user)s
-password = %(password)s
-chmod = %(chmod)s
-"""
-
-RPC_TEMPLATE = """
-[rpcinterface:supervisor]
-supervisor.rpcinterface_factory=supervisor.rpcinterface:make_main_rpcinterface
-"""
-
-RPC_EXTRA_TEMPLATE = """
-[rpcinterface:%(name)s]
-supervisor.rpcinterface_factory=%(callable)s
-"""
-
-CTLPLUGIN_TEMPLATE = """
-[ctlplugin:%(name)s]
-supervisor.ctl_factory = %(callable)s
-"""
-
-PROGRAM_TEMPLATE = """
-[program:%(program)s]
-command = %(command)s %(args)s
-process_name = %(program)s
-directory = %(directory)s
-priority = %(priority)s
-redirect_stderr = %(redirect_stderr)s
-%(extra_config)s
-"""
-
-EVENTLISTENER_TEMPLATE = """
-[eventlistener:%(name)s]
-command = %(command)s %(args)s
-events = %(events)s
-process_name=%(name)s
-environment=SUPERVISOR_USERNAME='%(user)s',SUPERVISOR_PASSWORD='%(password)s',SUPERVISOR_SERVER_URL='%(serverurl)s'
-%(extra_config)s
-"""
-
-GROUP_TEMPLATE = """
-[group:%(group)s]
-programs = %(programs)s
-priority = %(priority)s
-"""
-
-INCLUDE_TEMPLATE = """
-[include]
-files = %(stringfiles)s
-"""
