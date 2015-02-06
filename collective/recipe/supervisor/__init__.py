@@ -13,6 +13,231 @@ def option_setting(options, key, supervisor_key):
         or ''
 
 
+class ProgramSpecParser(object):
+    class UnexpectedToken(Exception):
+        pass
+
+    # "(?P<priority>\d+)"
+    # "\s+"
+    # "(?P<processname>[^\s]+)"
+    # "(\s+\((?P<processopts>([^\)]+))\))?"
+    # "\s+"
+    # "(?P<command>[^\s]+)"
+    # "(\s+\[(?P<args>(?!true|false)[^\]]+)\])?"
+    # "(\s+(?P<directory>(?!true|false)[^\s]+))?"
+    # "(\s+(?P<redirect>(true|false)))?"
+    # "(\s+(?P<user>[^\s]+))?")
+
+    def __init__(self, s):
+        self.s = s
+        self.priority = None
+        self.processname = None
+        self.processopts = None
+        self.command = None
+        self.args = None
+        self.directory = None
+        self.redirect = None
+        self.user = None
+        self._putback_buffer = []
+
+    def _next_token(self, *args):
+        try:
+            if len(self._putback_buffer) == 0:
+                t = self.s.next()
+                d = t.groupdict()
+                k = [k for k, v in d.items() if v is not None][0]
+                if k in args:
+                    return k, d[k]
+            else:
+                k, v = self._putback_buffer.pop()
+                if k in args:
+                    return k, v
+        except StopIteration:
+            k = 'EOF'
+            if k in args:
+                return k, ''
+        raise self.UnexpectedToken('expected %s, got %s' % (', '.join(args), k))
+
+    def _putback(self, kv):
+        self._putback_buffer.append(kv)
+
+    def _unescape_string(self, v):
+        return re.sub(r'\\(.)', '\\1', v)
+
+    def parse_priority(self):
+        _, v = self._next_token('decimal')
+        self.priority = v
+
+    def parse_spaces(self):
+        self._next_token('spaces')
+
+    def parse_processname(self):
+        result = []
+        while True:
+            k, v = self._next_token('decimal', 'boolean', 'string', 'variable', 'lparen', 'rparen', 'lbracket', 'rbracket', 'chunk', 'spaces')
+            if k == 'spaces':
+                self._putback((k, v))
+                break
+            else:
+                if k == 'string':
+                    v = self.unescape_string(v[1:-1])
+                result.append(v)
+        self.processname = ''.join(result)
+
+    def parse_processopts(self):
+        self.processopts = self._parse_processopts()[1:-1]
+
+    def _parse_processopts(self):
+        _, v = self._next_token('lparen')
+        result = [v]
+        while True:
+            k, v = self._next_token('decimal', 'boolean', 'string', 'variable', 'lparen', 'rparen', 'lbracket', 'rbracket', 'chunk', 'spaces')
+            if k == 'lparen':
+                self._putback((k, v))
+                result.append(self._parse_processopts())
+            elif k == 'rparen':
+                result.append(v)
+                break
+            else:
+                if k == 'string':
+                    v = self.unescape_string(v[1:-1])
+                result.append(v)
+        return ''.join(result)
+
+    def parse_command(self):
+        result = []
+        while True:
+            k, v = self._next_token('decimal', 'boolean', 'string', 'variable', 'lparen', 'rparen', 'lbracket', 'rbracket', 'chunk', 'spaces', 'EOF')
+            if k == 'spaces' or k == 'EOF':
+                self._putback((k, v))
+                break
+            else:
+                if k == 'string':
+                    v = self.unescape_string(v[1:-1])
+                result.append(v)
+        self.command = ''.join(result)
+
+    def parse_args(self):
+        k, v = self._next_token('spaces', 'EOF')
+        if k == 'EOF':
+            self._putback((k, v))
+            return
+        result = []
+        self._next_token('lbracket')
+        while True:
+            k, v = self._next_token('decimal', 'boolean', 'string', 'variable', 'lparen', 'rparen', 'lbracket', 'rbracket', 'chunk', 'spaces')
+            if k == 'rbracket':
+                break
+            else:
+                if k == 'string':
+                    v = self.unescape_string(v[1:-1])
+                result.append(v)
+        self.args = ''.join(result)
+
+    def parse_directory(self):
+        pk, pv = self._next_token('spaces', 'EOF')
+        if pk == 'EOF':
+            self._putback((pk, pv))
+            return
+        k, v = self._next_token('decimal', 'boolean', 'string', 'variable', 'lparen', 'rparen', 'lbracket', 'rbracket', 'chunk', 'spaces', 'EOF')
+        if k in ('boolean', 'EOF'):
+            self._putback((k, v))
+            self._putback((pk, pv))
+            return
+        result = [v]
+        while True:
+            k, v = self._next_token('decimal', 'boolean', 'string', 'variable', 'lparen', 'rparen', 'lbracket', 'rbracket', 'chunk', 'spaces', 'EOF')
+            if k in ('spaces', 'EOF'):
+                self._putback((k, v))
+                break
+            else:
+                if k == 'string':
+                    v = self.unescape_string(v[1:-1])
+                result.append(v)
+        self.directory = ''.join(result)
+
+    def parse_redirect(self):
+        pk, pv = self._next_token('spaces', 'EOF')
+        if pk == 'EOF':
+            self._putback((pk, pv))
+            return
+        k, v = self._next_token('decimal', 'boolean', 'string', 'variable', 'lparen', 'rparen', 'lbracket', 'rbracket', 'chunk', 'spaces', 'EOF')
+        if k == 'boolean':
+            self.redirect = v
+        else:
+            self._putback((k, v))
+            self._putback((pk, pv))
+
+    def parse_user(self):
+        k, v = self._next_token('spaces', 'EOF')
+        if k == 'EOF':
+            self._putback((k, v))
+            return
+        result = []
+        while True:
+            k, v = self._next_token('decimal', 'boolean', 'string', 'variable', 'lparen', 'rparen', 'lbracket', 'rbracket', 'chunk', 'spaces', 'EOF')
+            if k in ('spaces', 'EOF'):
+                self._putback((k, v))
+                break
+            else:
+                if k == 'string':
+                    v = self.unescape_string(v[1:-1])
+                result.append(v)
+        self.user = ''.join(result)
+
+    def parse(self):
+        self.parse_priority()
+        self.parse_spaces()
+        self.parse_processname()
+        self.parse_spaces()
+        self.parse_processopts()
+        self.parse_spaces()
+        self.parse_command()
+        self.parse_args()
+        self.parse_directory()
+        self.parse_redirect()
+        self.parse_user()
+
+    def groupdict(self):
+        return {
+            'priority': self.priority,
+            'processname': self.processname,
+            'processopts': self.processopts,
+            'command': self.command,
+            'args': self.args,
+            'directory': self.directory,
+            'redirect': self.redirect,
+            'user': self.user,
+            }
+
+    def __call__(self):
+        try:
+            self.parse()
+        except self.UnexpectedToken:
+            return None
+        return self
+
+
+class ProgramSpecMatcher(object):
+    token_re = re.compile('|'.join((
+        r'''(?P<decimal>\d+)''',
+        r'''(?P<spaces>\s+)''',
+        r'''(?P<boolean>true|false)''',
+        r'''(?P<string>"(?:[^"\\]|\\.)"|'(?:[^'\\]|\\.)')''',
+        r'''(?P<variable>\$\{[^}]*\})''',
+        r'''(?P<lparen>\()''',
+        r'''(?P<rparen>\))''',
+        r'''(?P<lbracket>\[)''',
+        r'''(?P<rbracket>\])''',
+        r'''(?P<chunk>[^()[\]\s\d"']+)''',
+        )))
+    def __init__(self):
+        pass
+
+    def match(self, s):
+        return ProgramSpecParser(self.token_re.finditer(s))()
+
+
 class Recipe(object):
     """zc.buildout recipe"""
 
@@ -170,16 +395,7 @@ class Recipe(object):
         # programs
         programs = [p for p in self.options.get('programs', '').splitlines()
                     if p]
-        pattern = re.compile("(?P<priority>\d+)"
-                             "\s+"
-                             "(?P<processname>[^\s]+)"
-                             "(\s+\((?P<processopts>([^\)]+))\))?"
-                             "\s+"
-                             "(?P<command>[^\s]+)"
-                             "(\s+\[(?P<args>(?!true|false)[^\]]+)\])?"
-                             "(\s+(?P<directory>(?!true|false)[^\s]+))?"
-                             "(\s+(?P<redirect>(true|false)))?"
-                             "(\s+(?P<user>[^\s]+))?")
+        pattern = ProgramSpecMatcher()
 
         if "services" in self._sections:
             for program in programs:
