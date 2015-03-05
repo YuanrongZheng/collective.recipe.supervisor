@@ -85,16 +85,20 @@ class ProgramSpecParser(object):
         self.processname = ''.join(result)
 
     def parse_processopts(self):
-        self.processopts = self._parse_processopts()[1:-1]
+        k, v = self._next_token('decimal', 'boolean', 'string', 'variable', 'lparen', 'rparen', 'lbracket', 'rbracket', 'chunk', 'spaces', 'EOF')
+        if k != 'lparen':
+            self._putback((k, v))
+            self.processopts = ''
+            return None
+        self.processopts = self._parse_processopts(v)[1:-1]
+        self._next_token('spaces')
 
-    def _parse_processopts(self):
-        _, v = self._next_token('lparen')
+    def _parse_processopts(self, v):
         result = [v]
         while True:
             k, v = self._next_token('decimal', 'boolean', 'string', 'variable', 'lparen', 'rparen', 'lbracket', 'rbracket', 'chunk', 'spaces')
             if k == 'lparen':
-                self._putback((k, v))
-                result.append(self._parse_processopts())
+                result.append(self._parse_processopts(v))
             elif k == 'rparen':
                 result.append(v)
                 break
@@ -191,7 +195,6 @@ class ProgramSpecParser(object):
         self.parse_processname()
         self.parse_spaces()
         self.parse_processopts()
-        self.parse_spaces()
         self.parse_command()
         self.parse_args()
         self.parse_directory()
