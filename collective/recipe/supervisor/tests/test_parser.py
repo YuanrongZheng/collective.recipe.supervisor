@@ -61,3 +61,16 @@ class ProgramSpecMatcherTest(unittest.TestCase):
         self.assertEqual(result.redirect, 'true')
         self.assertEqual(result.user, 'user')
 
+    def test_no_opts(self):
+        from .. import ProgramSpecMatcher
+        result = ProgramSpecMatcher().match("1 processname true/a/b/command [args args] directory true user")
+        self.assertEqual(result.priority, '1')
+        self.assertEqual(result.processname, 'processname')
+        self.assertEqual(result.processopts, '')
+        self.assertEqual(result.command, 'true/a/b/command')
+        self.assertEqual(result.args, 'args args')
+        self.assertEqual(result.directory, 'directory')
+        self.assertEqual(result.redirect, 'true')
+        self.assertEqual(result.user, 'user')
+
+
