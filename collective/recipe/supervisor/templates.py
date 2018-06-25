@@ -6,6 +6,7 @@ logfile_maxbytes = %(logfile_maxbytes)s
 logfile_backups = %(logfile_backups)s
 loglevel = %(loglevel)s
 pidfile = %(pidfile)s
+minfds = %(minfds)s
 umask = %(umask)s
 nodaemon = %(nodaemon)s
 nocleanup = %(nocleanup)s

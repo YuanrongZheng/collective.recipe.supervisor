@@ -322,6 +322,12 @@ class Recipe(object):
                 'logfile-maxbytes',
                 '50MB'
             )
+
+            param['minfds'] = self.options.get(
+                'minfds',
+                '1024'
+            )
+
             param['logfile_backups'] = self.options.get(
                 'logfile-backups',
                 '10'
